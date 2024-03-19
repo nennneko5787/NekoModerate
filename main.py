@@ -48,7 +48,7 @@ async def on_guild_join(guild):
 			)
 			break
 
-class Report(discord.ui.Modal):
+class ReportUser(discord.ui.Modal):
 	reason = discord.ui.TextInput(
 		label='グローバルBANシステムへ通報する理由',
 		style=discord.TextStyle.long,
@@ -78,7 +78,40 @@ class Report(discord.ui.Modal):
 
 @tree.context_menu(name="グローバルBANシステムに通報")
 async def report(interaction: discord.Interaction, member: discord.Member):
-	await interaction.response.send_modal(Report(member))
+	await interaction.response.send_modal(ReportUser(member))
+
+class ReportMessage(discord.ui.Modal):
+	reason = discord.ui.TextInput(
+		label='グローバルBANシステムへ通報する理由',
+		style=discord.TextStyle.long,
+		placeholder='通報する理由を書いてください。',
+		required=True,
+		max_length=300,
+	)
+	
+	def __init__(self, message: discord.Message):
+		super().__init__(title='ユーザーをグローバルBANシステムへ通報する')
+		self.message = message
+
+	async def on_submit(self, interaction: discord.Interaction):
+		async with aiohttp.ClientSession() as session:
+			webhook = discord.Webhook.from_url(os.getenv("webhook"), session=session)
+			embed = discord.Embed(title="通報されました。", description=f"理由: {self.reason.value}", timestamp=datetime.now(), colour=discord.Colour.red())
+			embed.add_field(name="ユーザー", value=f"{self.message.author.mention}(ID: `{self.message.author.name}`, Snowflake: `{self.message.author.id}`)")
+			embed.add_field(name="コンテンツ", value=f"```\n{self.message.clean_content}\n```")
+			embed.add_field(name="通報したユーザー", value=f"{interaction.user.mention}(ID: `{interaction.user.name}`, Snowflake: `{interaction.user.id}`)")
+			await webhook.send(embed=embed, username="NekoModerateユーザー通報システム", avatar_url=client.user.display_avatar)
+		await interaction.response.send_message(f'通報しました。受理され次第、アクションが実行されます。', ephemeral=True)
+
+	async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+		await interaction.response.send_message('エラーが発生しました。ごめんなさい。', ephemeral=True)
+
+		# Make sure we know what the error actually is
+		traceback.print_exception(type(error), error, error.__traceback__)
+
+@tree.context_menu(name="グローバルBANシステムに通報")
+async def report(interaction: discord.Interaction, message: discord.Message):
+	await interaction.response.send_modal(ReportMessage(message))
 
 @client.event
 async def on_member_join(member: discord.Member):
