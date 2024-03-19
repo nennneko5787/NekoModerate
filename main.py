@@ -48,7 +48,7 @@ async def on_guild_join(guild):
 
 class Report(discord.ui.Modal):
 	def __init__(self, member: discord.Member):
-		super.__init__(title='ユーザーをグローバルBANシステムへ通報する')
+		super().__init__(title='ユーザーをグローバルBANシステムへ通報する')
 		self.member = member
 		self.reason = discord.ui.TextInput(
 			label='グローバルBANシステムへ通報する理由',
