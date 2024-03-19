@@ -10,6 +10,8 @@ import aiohttp
 import random
 import string
 
+import traceback
+
 from keep_alive import keep_alive
 
 def generate_random_alphanumeric(length):
@@ -31,10 +33,39 @@ async def connect_to_db():
 
 @client.event
 async def on_ready():
-	global connection
-	connection = await connect_to_db()
 	await tree.sync()
 	print(f"Logged in {client.user}")
+
+class Report(discord.ui.Modal, title='ユーザーをグローバルBANシステムへ通報する'):
+	def __init__(self, member: discord.Member):
+		super.__init__(self)
+		self.member = member
+		self.reason = discord.ui.TextInput(
+			label='グローバルBANシステムへ通報する理由',
+			style=discord.TextStyle.long,
+			placeholder=f'{member.display_name} を通報する理由を書いてください。',
+			required=True,
+			max_length=300,
+		)
+
+	async def on_submit(self, interaction: discord.Interaction):
+		async with aiohttp.ClientSession() as session:
+			webhook = discord.Webhook.from_url(os.getenv("webhook"), session=session)
+			embed = discord.Embed(title="通報されました。", description=f"理由: {self.reason.value}", timestamp=datetime.now(), colour=discord.Colour.red())
+			embed.add_field(name="ユーザー", value=f"{self.member.mention}(ID: `{self.member.name}`, Snowflake: `{self.member.id}`)")
+			embed.add_field(name="通報したユーザー", value=f"{interaction.user.mention}(ID: `{interaction.user.name}`, Snowflake: `{interaction.user.id}`)")
+			await webhook.send(embed=embed, username="NekoModerateユーザー通報システム", avatar_url=client.user.display_avatar)
+		await interaction.response.send_message(f'通報しました。受理され次第、アクションが実行されます。', ephemeral=True)
+
+	async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+		await interaction.response.send_message('エラーが発生しました。ごめんなさい。', ephemeral=True)
+
+		# Make sure we know what the error actually is
+		traceback.print_exception(type(error), error, error.__traceback__)
+
+@tree.context_menu(name="グローバルBANシステムに通報")
+async def report(interaction: discord.Interaction, member: discord.Member):
+	await interaction.response.send_modal(Report(member))
 
 @client.event
 async def on_member_join(member: discord.Member):
@@ -109,6 +140,8 @@ async def on_message(message):
 		print("li return")
 		return
 
+	connection = await connect_to_db()
+
 	iskickinvite = await connection.fetchval('SELECT iskickinvite FROM guilds WHERE id = $1', message.guild.id)
 	if iskickinvite != True:
 		print("ki return")
@@ -120,6 +153,8 @@ async def on_message(message):
 
 	log_channel_id = await connection.fetchval('SELECT log_channel FROM guilds WHERE id = $1', message.guild.id)
 	log_channel = client.get_channel(log_channel_id)
+
+	await connection.close()
 
 	# メッセージに含まれるリンクがサーバーの招待リンクでない場合、メッセージを削除
 	for link in links:
@@ -136,12 +171,14 @@ async def on_message(message):
 async def globalban(interaction: discord.Interaction, setting: bool):
 	if interaction.user.guild_permissions.administrator:
 		await interaction.response.defer()
+		connection = await connect_to_db()
 		await connection.execute('''
 			INSERT INTO guilds (id, isglobalban) 
 			VALUES ($1, $2) 
 			ON CONFLICT (id) 
 			DO UPDATE SET isglobalban = $2
 		''', interaction.guild.id, setting)  # 例としてid=1のデータを挿入または更新する
+		await connection.close()
 		await interaction.followup.send(f"グローバルBANを有効化するかどうかを {setting} に設定しました。")
 	else:
 		await interaction.response.send_message("このコマンドを実行するためには、**管理者権限**が必要です！", ephemeral=True)
@@ -150,12 +187,14 @@ async def globalban(interaction: discord.Interaction, setting: bool):
 async def kickotherinvite(interaction: discord.Interaction, setting: bool):
 	if interaction.user.guild_permissions.administrator:
 		await interaction.response.defer()
+		connection = await connect_to_db()
 		await connection.execute('''
 			INSERT INTO guilds (id, iskickinvite) 
 			VALUES ($1, $2) 
 			ON CONFLICT (id) 
 			DO UPDATE SET iskickinvite = $2
 		''', interaction.guild.id, setting)  # 例としてid=1のデータを挿入または更新する
+		await connection.close()
 		await interaction.followup.send(f"招待リンクを消去するかどうかを {setting} に設定しました。")
 	else:
 		await interaction.response.send_message("このコマンドを実行するためには、**管理者権限**が必要です！", ephemeral=True)
@@ -164,12 +203,14 @@ async def kickotherinvite(interaction: discord.Interaction, setting: bool):
 async def logchannel(interaction: discord.Interaction, channel: discord.TextChannel):
 	if interaction.user.guild_permissions.administrator:
 		await interaction.response.defer()
+		connection = await connect_to_db()
 		await connection.execute('''
 			INSERT INTO guilds (id, log_channel) 
 			VALUES ($1, $2) 
 			ON CONFLICT (id) 
 			DO UPDATE SET log_channel = $2
 		''', interaction.guild.id, channel.id)  # 例としてid=1のデータを挿入または更新する
+		await connection.close()
 		await interaction.followup.send(f"ログ通知先チャンネルを {channel.mention} に設定しました。")
 	else:
 		await interaction.response.send_message("このコマンドを実行するためには、**管理者権限**が必要です！", ephemeral=True)
