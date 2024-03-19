@@ -2,5 +2,3 @@ discord.py
 flask[async]
 python-dotenv
 asyncpg
-supabase
-requests
