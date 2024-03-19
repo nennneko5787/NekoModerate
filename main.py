@@ -38,7 +38,7 @@ async def on_ready():
 
 class Report(discord.ui.Modal, title='ユーザーをグローバルBANシステムへ通報する'):
 	def __init__(self, member: discord.Member):
-		super.__init__()
+		super.__init__(title='ユーザーをグローバルBANシステムへ通報する')
 		self.member = member
 		self.reason = discord.ui.TextInput(
 			label='グローバルBANシステムへ通報する理由',
