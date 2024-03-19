@@ -36,9 +36,19 @@ async def on_ready():
 	await tree.sync()
 	print(f"Logged in {client.user}")
 
-class Report(discord.ui.Modal, title='ユーザーをグローバルBANシステムへ通報する'):
+@client.event
+async def on_guild_join(guild):
+	for channel in guild.channels:
+		if channel.permissions_for(guild.me).send_messages == True:
+			embed = discord.Embed(
+				title="NekoModerateを導入していただき、誠にありがとうございます。",
+				description="当ボットを利用になる場合は、以下の操作を行ってください。\n`/logchannel` コマンドを使用し、ログを送信するチャンネルを選択する。\nこの操作を行わない場合、ログは確認できません。"
+			)
+			break
+
+class Report(discord.ui.Modal):
 	def __init__(self, member: discord.Member):
-		super.__init__(super, title='ユーザーをグローバルBANシステムへ通報する')
+		super.__init__(title='ユーザーをグローバルBANシステムへ通報する')
 		self.member = member
 		self.reason = discord.ui.TextInput(
 			label='グローバルBANシステムへ通報する理由',
@@ -96,9 +106,10 @@ async def on_member_join(member: discord.Member):
 
 				log_channel_id = await connection.fetchval('SELECT log_channel FROM guilds WHERE id = $1', member.guild.id)
 				log_channel = client.get_channel(log_channel_id)
-				embed = discord.Embed(title="メンバーがグローバルBANシステムにより、BANされました。", description=f"理由: {row.get('reason', '<None>')}", timestamp=now, colour=discord.Colour.red())
-				embed.add_field(name="ユーザー", value=member.mention)
-				await log_channel.send(embed=embed)
+				if log_channel is not None:
+					embed = discord.Embed(title="メンバーがグローバルBANシステムにより、BANされました。", description=f"理由: {row.get('reason', '<None>')}", timestamp=now, colour=discord.Colour.red())
+					embed.add_field(name="ユーザー", value=member.mention)
+					await log_channel.send(embed=embed)
 
 				await member.ban(delete_message_days=7, reason=f"nekoModerateによりBAN: {row.get('reason', '<None>')}")
 
@@ -160,10 +171,11 @@ async def on_message(message):
 	for link in links:
 		if is_discord_invite_link(link):
 			if not any(invite.url in link for invite in invites):
-				embed = discord.Embed(title="メッセージが削除されました。", description="理由: 他鯖招待リンク送信許可チャンネル以外での他鯖の招待リンク送信", timestamp=datetime.now(), colour=discord.Colour.red())
-				embed.add_field(name="ユーザー", value=message.author.mention)
-				embed.add_field(name="メッセージ内容", value=f"```\n{message.content}\n```")
-				await log_channel.send(embed=embed)
+				if log_channel is not None:
+					embed = discord.Embed(title="メッセージが削除されました。", description="理由: 他鯖招待リンク送信許可チャンネル以外での他鯖の招待リンク送信", timestamp=datetime.now(), colour=discord.Colour.red())
+					embed.add_field(name="ユーザー", value=message.author.mention)
+					embed.add_field(name="メッセージ内容", value=f"```\n{message.content}\n```")
+					await log_channel.send(embed=embed)
 				await message.delete()
 				break
 
