@@ -53,8 +53,8 @@ async def on_member_join(member: discord.Member):
 					timestamp=now,
 					colour=discord.Colour.red()
 				).set_author(
-					name=member.display_name,
-					icon_url=member.display_avatar
+					name=member.guild.name,
+					icon_url=member.guild.icon
 				).set_footer(
 					text="nekoModerate",
 					icon_url=client.user.display_avatar
