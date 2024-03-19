@@ -20,9 +20,6 @@ if os.path.isfile(".env") == True:
 	from dotenv import load_dotenv
 	load_dotenv(verbose=True)
 
-url: str = os.environ.get("SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_KEY")
-
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -30,8 +27,7 @@ client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
 
 async def connect_to_db():
-	return await asyncpg.connect(user=os.getenv("db_user"), password=os.getenv("db_pass"),
-								 database=os.getenv("db_name"), host=os.getenv("db_host"))
+	return await asyncpg.connect(os.getenv("database"))
 
 @client.event
 async def on_ready():
@@ -39,6 +35,45 @@ async def on_ready():
 	connection = await connect_to_db()
 	await tree.sync()
 	print(f"Logged in {client.user}")
+
+@client.event
+async def on_member_join(member: discord.Member):
+	connection = await connect_to_db()
+	try:
+		# globalbanテーブルからIDが100の行を取得します。
+		row = await connection.fetchrow("SELECT * FROM globalban WHERE id = $1", member.id)
+		
+		# 行が存在する場合の処理
+		if row:
+			if row.get("is_banned", False) == True:
+				now = datetime.now()
+				embed = discord.Embed(
+					title="あなたはnekoModerateによりグローバルBANされています！",
+					description=f"理由: {row.get('reason', '<None>')}",
+					timestamp=now,
+					colour=discord.Colour.red()
+				).set_author(
+					name=member.display_name,
+					icon_url=member.display_avatar
+				).set_footer(
+					text="nekoModerate",
+					icon_url=client.user.display_avatar
+				)
+				if member.dm_channel is None:
+					await member.create_dm()
+				await member.dm_channel.send(embed=embed)
+
+				log_channel_id = await connection.fetchval('SELECT log_channel FROM guilds WHERE id = $1', member.guild.id)
+				log_channel = client.get_channel(log_channel_id)
+				embed = discord.Embed(title="メンバーがグローバルBANシステムにより、BANされました。", description=f"理由: {row.get('reason', '<None>')}", timestamp=now, colour=discord.Colour.red())
+				embed.add_field(name="ユーザー", value=member.mention)
+				await log_channel.send(embed=embed)
+
+				await member.ban(delete_message_days=7, reason=f"nekoModerateによりBAN: {row.get('reason', '<None>')}")
+
+	finally:
+		# 接続をクローズします。
+		await connection.close()
 
 def is_discord_invite_link(link):
 	return "discord.gg/" in link or "discord.com/invite/" in link
@@ -97,8 +132,22 @@ async def on_message(message):
 				await message.delete()
 				break
 
-@tree.command(name="kickotherinvite",description="他鯖の招待リンクを消去するかどうか ※チャンネルごとに設定するにはチャンネルのトピックに「discord_invite_accept」を含めます。")
-async def logchannel(interaction: discord.Interaction, setting: bool):
+@tree.command(name="globalban",description="グローバルBANシステムを有効化するかどうか。")
+async def globalban(interaction: discord.Interaction, setting: bool):
+	if interaction.user.guild_permissions.administrator:
+		await interaction.response.defer()
+		await connection.execute('''
+			INSERT INTO guilds (id, isglobalban) 
+			VALUES ($1, $2) 
+			ON CONFLICT (id) 
+			DO UPDATE SET isglobalban = $2
+		''', interaction.guild.id, setting)  # 例としてid=1のデータを挿入または更新する
+		await interaction.followup.send(f"グローバルBANを有効化するかどうかを {setting} に設定しました。")
+	else:
+		await interaction.response.send_message("このコマンドを実行するためには、**管理者権限**が必要です！", ephemeral=True)
+
+@tree.command(name="kickotherinvite",description="他鯖の招待リンクを消去するかどうか ※チャンネルごとに設定するにはチャンネルのトピックに「discord_invite_accept」を含めてください。")
+async def kickotherinvite(interaction: discord.Interaction, setting: bool):
 	if interaction.user.guild_permissions.administrator:
 		await interaction.response.defer()
 		await connection.execute('''
