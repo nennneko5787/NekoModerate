@@ -1,4 +1,5 @@
 import discord
+from discord.ext import tasks
 import discord.app_commands
 import os
 import asyncpg
@@ -34,6 +35,7 @@ async def connect_to_db():
 @client.event
 async def on_ready():
 	await tree.sync()
+	change_presence.start()
 	print(f"Logged in {client.user}")
 
 @client.event
@@ -47,16 +49,17 @@ async def on_guild_join(guild):
 			break
 
 class Report(discord.ui.Modal):
+	reason = discord.ui.TextInput(
+		label='グローバルBANシステムへ通報する理由',
+		style=discord.TextStyle.long,
+		placeholder='通報する理由を書いてください。',
+		required=True,
+		max_length=300,
+	)
+	
 	def __init__(self, member: discord.Member):
 		super().__init__(title='ユーザーをグローバルBANシステムへ通報する')
 		self.member = member
-		self.reason = discord.ui.TextInput(
-			label='グローバルBANシステムへ通報する理由',
-			style=discord.TextStyle.long,
-			placeholder=f'{member.display_name} を通報する理由を書いてください。',
-			required=True,
-			max_length=300,
-		)
 
 	async def on_submit(self, interaction: discord.Interaction):
 		async with aiohttp.ClientSession() as session:
@@ -226,6 +229,11 @@ async def logchannel(interaction: discord.Interaction, channel: discord.TextChan
 		await interaction.followup.send(f"ログ通知先チャンネルを {channel.mention} に設定しました。")
 	else:
 		await interaction.response.send_message("このコマンドを実行するためには、**管理者権限**が必要です！", ephemeral=True)
+
+@tasks.loop(seconds=20)
+async def change_presence():
+	game = discord.Game(f"{len(client.guilds)} SERVERS")
+	await client.change_presence(status=discord.Status.online, activity=game)
 
 keep_alive()
 client.run(os.getenv("discord"))
